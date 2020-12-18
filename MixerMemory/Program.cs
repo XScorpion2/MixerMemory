@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Reflection;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace MixerMemory
@@ -11,9 +13,15 @@ namespace MixerMemory
         [STAThread]
         static void Main()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MixerContext());
+            var mutexName = $"Local\\{Assembly.GetExecutingAssembly().GetType().GUID}";
+            using (var mutex = new Mutex(false, mutexName, out var newSingleInstance))
+            {
+                if (!newSingleInstance)
+                    return;
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new MixerContext());
+            }
         }
     }
 }

@@ -41,6 +41,8 @@ namespace MixerMemory
             m_Timer.Tick += (s, e) => m_MixerMemory.Restore();
             m_Timer.Interval = 300000;
             m_Timer.Start();
+
+            m_MixerMemory.Restore();
         }
 
         private void Open(object sender, EventArgs e)
