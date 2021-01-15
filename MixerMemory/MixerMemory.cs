@@ -22,6 +22,11 @@ namespace MixerMemory
                 m_SavedVolumes = JsonConvert.DeserializeObject<Dictionary<string, float>>(text);
             }
 
+            Reload();
+        }
+
+        public void Reload()
+        {
             var enumerator = new MMDeviceEnumerator();
             m_Device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
             m_Manager = m_Device.AudioSessionManager;
@@ -37,6 +42,7 @@ namespace MixerMemory
 
         public void Restore()
         {
+            Reload();
             var sessions = m_Manager.Sessions;
             for (int i = 0; i < sessions.Count; i++)
                 RestoreSession(sessions[i]);

@@ -23,9 +23,10 @@ namespace MixerMemory
 
             var contextMenu = new ContextMenuStrip();
             contextMenu.Items.Add("Open", null, Open);
-            contextMenu.Items.Add("Save", null, (s, e) => m_MixerMemory.Save());
-            contextMenu.Items.Add("Restore", null, (s, e) => m_MixerMemory.Restore());
-            contextMenu.Items.Add("Flush", null, (s, e) => m_MixerMemory.Flush());
+            contextMenu.Items.Add("Save Volumes", null, (s, e) => m_MixerMemory.Save());
+            contextMenu.Items.Add("Restore Volumes", null, (s, e) => m_MixerMemory.Restore());
+            contextMenu.Items.Add("Flush Json", null, (s, e) => m_MixerMemory.Flush());
+            contextMenu.Items.Add("Reload Device", null, (s, e) => m_MixerMemory.Reload());
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("Exit", null, contextMenu_OnExit);
 
