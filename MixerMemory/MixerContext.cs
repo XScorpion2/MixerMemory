@@ -22,13 +22,14 @@ namespace MixerMemory
             m_Components = new Container();
 
             var contextMenu = new ContextMenuStrip();
-            contextMenu.Items.Add("Open", null, Open);
+            contextMenu.Items.Add("Open Log", null, OpenLog);
+            contextMenu.Items.Add("Open Config", null, OpenConfig);
             contextMenu.Items.Add("Save Volumes", null, (s, e) => m_MixerMemory.Save());
             contextMenu.Items.Add("Restore Volumes", null, (s, e) => m_MixerMemory.Restore());
             contextMenu.Items.Add("Flush Json", null, (s, e) => m_MixerMemory.Flush());
             contextMenu.Items.Add("Reload Device", null, (s, e) => m_MixerMemory.Reload());
             contextMenu.Items.Add(new ToolStripSeparator());
-            contextMenu.Items.Add("Exit", null, contextMenu_OnExit);
+            contextMenu.Items.Add("Exit", null, Exit);
 
             m_NotifyIcon = new NotifyIcon(m_Components)
             {
@@ -42,15 +43,20 @@ namespace MixerMemory
             m_Timer.Tick += (s, e) => m_MixerMemory.Restore();
             m_Timer.Interval = 300000;
             m_Timer.Start();
-
-            m_MixerMemory.Restore();
         }
 
-        private void Open(object sender, EventArgs e)
+        private void OpenLog(object sender, EventArgs e)
         {
             var appPath = Assembly.GetExecutingAssembly().Location;
             var dir = Path.GetDirectoryName(appPath);
-            Process.Start(dir);
+            Process.Start(Path.Combine(dir, "info.log"));
+        }
+
+        private void OpenConfig(object sender, EventArgs e)
+        {
+            var appPath = Assembly.GetExecutingAssembly().Location;
+            var dir = Path.GetDirectoryName(appPath);
+            Process.Start(Path.Combine(dir, MixerMemory.k_ConfigJson));
         }
 
         protected override void Dispose(bool disposing)
@@ -62,7 +68,7 @@ namespace MixerMemory
             }
         }
 
-        private void contextMenu_OnExit(object sender, EventArgs e)
+        private void Exit(object sender, EventArgs e)
         {
             m_MixerMemory.Flush();
             m_NotifyIcon.Visible = false;
