@@ -1,4 +1,5 @@
 ﻿using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 using Newtonsoft.Json;
 using NLog;
 using System;
@@ -8,10 +9,11 @@ using System.Threading.Tasks;
 
 namespace MixerMemory
 {
-    public class MixerMemory
+    public class MixerMemory : IMMNotificationClient
     {
         public const string k_ConfigJson = "MixerMemory.json";
 
+        private MMDeviceEnumerator m_Enumerator;
         private MMDevice m_Device;
         private AudioSessionManager m_Manager;
 
@@ -30,14 +32,15 @@ namespace MixerMemory
                 m_SavedVolumes = JsonConvert.DeserializeObject<Dictionary<string, float>>(text);
             }
 
+            m_Enumerator = new MMDeviceEnumerator();
+            m_Enumerator.RegisterEndpointNotificationCallback(this);
             Reload();
             Restore();
         }
 
         public void Reload()
         {
-            var enumerator = new MMDeviceEnumerator();
-            m_Device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            m_Device = m_Enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
             m_Logger.Info($"Set active device to {m_Device.DeviceFriendlyName}.");
             m_Manager = m_Device.AudioSessionManager;
             m_Manager.OnSessionCreated += (s, a) => NewSession(new AudioSessionControl(a));
@@ -102,5 +105,36 @@ namespace MixerMemory
             var displayName = session.GetFriendlyDisplayName();
             m_SavedVolumes[displayName] = session.SimpleAudioVolume.Volume;
         }
+
+        public void OnDeviceStateChanged(string deviceId, DeviceState newState)
+        {
+            if (m_Device.ID == deviceId)
+            {
+                m_Logger.Info($"Device '{deviceId}' state changed to '{newState}'.");
+                Reload();
+            }
+        }
+
+        public void OnDeviceAdded(string pwstrDeviceId) { }
+
+        public void OnDeviceRemoved(string deviceId)
+        {
+            if (m_Device.ID == deviceId)
+            {
+                m_Logger.Info($"Device '{deviceId}' removed.");
+                Reload();
+            }
+        }
+
+        public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
+        {
+            if (flow == DataFlow.Render && role == Role.Multimedia)
+            {
+                m_Logger.Info($"Default device changed to '{defaultDeviceId}'.");
+                Reload();
+            }
+        }
+
+        public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
     }
 }
