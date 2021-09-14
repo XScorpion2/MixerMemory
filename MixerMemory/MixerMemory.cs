@@ -17,7 +17,8 @@ namespace MixerMemory
         private MMDevice m_Device;
         private AudioSessionManager m_Manager;
 
-        private Dictionary<string, float> m_SavedVolumes = new Dictionary<string, float>();
+        private Dictionary<string, float> m_CategoryVolumes = new Dictionary<string, float>();
+        private MixerMatching m_MixerMatching = new MixerMatching();
 
         private readonly Logger m_Logger = LogManager.GetCurrentClassLogger();
 
@@ -25,20 +26,46 @@ namespace MixerMemory
 
         public MixerMemory()
         {
-            if (File.Exists(k_ConfigJson))
+            JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
             {
-                m_Logger.Info("Loading values from config.");
-                var text = File.ReadAllText(k_ConfigJson);
-                m_SavedVolumes = JsonConvert.DeserializeObject<Dictionary<string, float>>(text);
-            }
+                Converters = new List<JsonConverter>() { new MatchTypeConverter() },
+                Formatting = Formatting.Indented
+            };
+
+            LoadVolumes();
 
             m_Enumerator = new MMDeviceEnumerator();
             m_Enumerator.RegisterEndpointNotificationCallback(this);
-            Reload();
-            Restore();
+            RefreshDevice();
+            RestoreVolumes();
         }
 
-        public void Reload()
+        public void LoadVolumes()
+        {
+            m_CategoryVolumes.Clear();
+            if (File.Exists(k_ConfigJson))
+            {
+                m_Logger.Info("Loading values from config.");
+                string text = File.ReadAllText(k_ConfigJson);
+                m_MixerMatching = JsonConvert.DeserializeObject<MixerMatching>(text);
+
+                foreach (CategoryData data in m_MixerMatching.Categories)
+                {
+                    if (m_CategoryVolumes.TryGetValue(data.Name, out float volume))
+                        m_Logger.Error($"Category '{data.Name}' already exists with Volume '{volume}'.");
+                    else
+                        m_CategoryVolumes.Add(data.Name, data.Volume);
+                }
+
+                foreach (ApplicationData data in m_MixerMatching.Rules)
+                {
+                    if (!m_CategoryVolumes.TryGetValue(data.Category, out float volume))
+                        m_Logger.Error($"Rules using Category '{data.Category}' that is undefined in the \"Categories\" section.");
+                }
+            }
+        }
+
+        public void RefreshDevice()
         {
             m_Device = m_Enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
             m_Logger.Info($"Set active device to {m_Device.DeviceFriendlyName}.");
@@ -46,39 +73,28 @@ namespace MixerMemory
             m_Manager.OnSessionCreated += (s, a) => NewSession(new AudioSessionControl(a));
         }
 
-        public void Save()
-        {
-            var sessions = m_Manager.Sessions;
-            for (int i = 0; i < sessions.Count; i++)
-                SaveSession(sessions[i]);
-        }
-
-        public void Restore()
+        public void RestoreVolumes()
         {
             m_Manager.RefreshSessions();
-            var sessions = m_Manager.Sessions;
+            SessionCollection sessions = m_Manager.Sessions;
             for (int i = 0; i < sessions.Count; i++)
                 RestoreSession(sessions[i]);
         }
 
-        public void Flush()
-        {
-            m_Logger.Info($"Flushing Session Volumes to config.");
-            var text = JsonConvert.SerializeObject(m_SavedVolumes, Formatting.Indented);
-            File.WriteAllText(k_ConfigJson, text);
-        }
-
         private async void NewSession(AudioSessionControl session)
         {
-            var displayName = session.GetFriendlyDisplayName();
+            string displayName = session.GetFriendlyDisplayName();
             m_Logger.Info($"New Session '{displayName}'.");
             RestoreSession(session);
+
+            // Zoom is odd in that we need to delay Restoring
+            // TODO: might want to try delaying all restoring
             if (!m_Queued && displayName == "Zoom")
             {
                 m_Queued = true;
                 m_Logger.Info($"Delay Restore Queued.");
                 await Task.Delay(TimeSpan.FromSeconds(5));
-                Restore();
+                RestoreVolumes();
                 m_Logger.Info($"Delay Restore Fired.");
                 m_Queued = false;
             }
@@ -86,24 +102,21 @@ namespace MixerMemory
 
         private void RestoreSession(AudioSessionControl session)
         {
-            var displayName = session.GetFriendlyDisplayName();
-            if (!m_SavedVolumes.TryGetValue(displayName, out float volume))
+            string category = "";
+            string displayName = session.GetFriendlyDisplayName();
+            string applicationPath = session.GetApplicationPath();
+            foreach (ApplicationData rule in m_MixerMatching.Rules)
             {
-                volume = 0.5f;
-                m_SavedVolumes[displayName] = volume;
+                if (MixerMatching.Matchers[(int)rule.Type](displayName, applicationPath, rule.Match))
+                {
+                    category = rule.Category;
+                    break;
+                }
             }
 
-            if (session.SimpleAudioVolume.Volume != volume)
-            {
-                session.SimpleAudioVolume.Volume = volume;
-                m_Logger.Info($"Set '{displayName}' to {volume}.");
-            }
-        }
-
-        private void SaveSession(AudioSessionControl session)
-        {
-            var displayName = session.GetFriendlyDisplayName();
-            m_SavedVolumes[displayName] = session.SimpleAudioVolume.Volume;
+            float volume = string.IsNullOrEmpty(category) ? 0.5f : m_CategoryVolumes[category];
+            m_Logger.Info($"Matched '{displayName}' at '{applicationPath}' to '{category}' volume '{volume}'.");
+            session.SimpleAudioVolume.Volume = volume;
         }
 
         public void OnDeviceStateChanged(string deviceId, DeviceState newState)
@@ -111,7 +124,7 @@ namespace MixerMemory
             if (m_Device.ID == deviceId)
             {
                 m_Logger.Info($"Device '{deviceId}' state changed to '{newState}'.");
-                Reload();
+                RefreshDevice();
             }
         }
 
@@ -122,7 +135,7 @@ namespace MixerMemory
             if (m_Device.ID == deviceId)
             {
                 m_Logger.Info($"Device '{deviceId}' removed.");
-                Reload();
+                RefreshDevice();
             }
         }
 
@@ -131,7 +144,7 @@ namespace MixerMemory
             if (flow == DataFlow.Render && role == Role.Multimedia)
             {
                 m_Logger.Info($"Default device changed to '{defaultDeviceId}'.");
-                Reload();
+                RefreshDevice();
             }
         }
 

@@ -24,10 +24,9 @@ namespace MixerMemory
             var contextMenu = new ContextMenuStrip();
             contextMenu.Items.Add("Open Log", null, OpenLog);
             contextMenu.Items.Add("Open Config", null, OpenConfig);
-            contextMenu.Items.Add("Save Volumes", null, (s, e) => m_MixerMemory.Save());
-            contextMenu.Items.Add("Restore Volumes", null, (s, e) => m_MixerMemory.Restore());
-            contextMenu.Items.Add("Flush Json", null, (s, e) => m_MixerMemory.Flush());
-            contextMenu.Items.Add("Reload Device", null, (s, e) => m_MixerMemory.Reload());
+            contextMenu.Items.Add("Restore Volumes", null, (s, e) => m_MixerMemory.RestoreVolumes());
+            contextMenu.Items.Add("Reload Volumes", null, (s, e) => m_MixerMemory.LoadVolumes());
+            contextMenu.Items.Add("Refresh Device", null, (s, e) => m_MixerMemory.RefreshDevice());
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("Exit", null, Exit);
 
@@ -40,7 +39,7 @@ namespace MixerMemory
             };
 
             m_Timer = new Timer(m_Components);
-            m_Timer.Tick += (s, e) => m_MixerMemory.Restore();
+            m_Timer.Tick += (s, e) => m_MixerMemory.RestoreVolumes();
             m_Timer.Interval = 300000;
             m_Timer.Start();
         }
@@ -70,7 +69,6 @@ namespace MixerMemory
 
         private void Exit(object sender, EventArgs e)
         {
-            m_MixerMemory.Flush();
             m_NotifyIcon.Visible = false;
             ExitThread();
         }

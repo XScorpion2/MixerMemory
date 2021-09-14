@@ -69,5 +69,25 @@ namespace MixerMemory
             // ExtractAppPath from SessionIdentifier
             return "Unnamed";
         }
+
+        public static string GetApplicationPath(this AudioSessionControl session)
+        {
+            if (session.IsSystemSoundsSession)
+                return "System Sound";
+
+            try
+            {
+                var process = Process.GetProcessById((int)session.GetProcessID);
+                string path = process.GetMainModuleFileName();
+                if (!string.IsNullOrEmpty(path))
+                    return path;
+                path = process.MainModule.FileName;
+                if (!string.IsNullOrEmpty(path))
+                    return path;
+            }
+            catch { /* don't fucking care */ }
+            // ExtractAppPath from SessionIdentifier
+            return "Unavailable";
+        }
     }
 }
