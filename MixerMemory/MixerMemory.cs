@@ -104,6 +104,9 @@ namespace MixerMemory
             }
 
             float volume = string.IsNullOrEmpty(category) ? 0.5f : m_CategoryVolumes[category];
+            if (session.SimpleAudioVolume.Volume == volume)
+                return;
+
             m_Logger.Info("Matched Session {displayName} from {applicationPath} to {category} volume {volume}.", displayName, applicationPath, category, volume);
             session.SimpleAudioVolume.Volume = volume;
         }
