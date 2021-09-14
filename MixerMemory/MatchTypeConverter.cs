@@ -24,7 +24,7 @@ namespace MixerMemory
             }
             catch
             {
-                m_Logger.Error("Invalud Rule Type '{value}' at '{reader.Path}'. Returning default rule type 'NameIs'.");
+                m_Logger.Error("Invalid Rule Type {requestedType} at {jsonPath}. Returning default rule type 'NameIs'.", value, reader.Path);
             }
             return MatchType.NameIs;
         }

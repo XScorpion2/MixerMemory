@@ -1,4 +1,5 @@
 ﻿using NAudio.CoreAudioApi;
+using NLog;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -8,6 +9,8 @@ namespace MixerMemory
 {
     static class Extensions
     {
+        private static readonly Logger m_Logger = LogManager.GetCurrentClassLogger();
+
         private const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
         private const int SYNCHRONIZE = 0x00100000;
 
@@ -35,10 +38,11 @@ namespace MixerMemory
                 var versionInfo = FileVersionInfo.GetVersionInfo(fileName);
                 return versionInfo.ProductName;
             }
-            catch
+            catch (Exception e)
             {
-                return "";
+                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(GetProductName), e.Message);
             }
+            return "";
         }
 
         public static string GetFriendlyDisplayName(this AudioSessionControl session)
@@ -65,7 +69,10 @@ namespace MixerMemory
                 if (!string.IsNullOrEmpty(displayName))
                     return displayName;
             }
-            catch { /* don't fucking care */ }
+            catch (Exception e)
+            {
+                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(GetFriendlyDisplayName), e.Message);
+            }
             // ExtractAppPath from SessionIdentifier
             return "Unnamed";
         }
@@ -81,11 +88,15 @@ namespace MixerMemory
                 string path = process.GetMainModuleFileName();
                 if (!string.IsNullOrEmpty(path))
                     return path;
-                path = process.MainModule.FileName;
-                if (!string.IsNullOrEmpty(path))
-                    return path;
+                // process.MainModule.FileName is identical to the GetMainModuleFileName extension method
+                // but the extension method was witten to be more flexible and not throw an exception.
+                // so if the extension method returns null, then we don't have access, simple as that.
+                // There are no fallbacks worth exploring here.
             }
-            catch { /* don't fucking care */ }
+            catch (Exception e)
+            {
+                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(GetApplicationPath), e.Message);
+            }
             // ExtractAppPath from SessionIdentifier
             return "Unavailable";
         }

@@ -22,8 +22,6 @@ namespace MixerMemory
 
         private readonly Logger m_Logger = LogManager.GetCurrentClassLogger();
 
-        private bool m_Queued = false;
-
         public MixerMemory()
         {
             JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
@@ -52,7 +50,7 @@ namespace MixerMemory
                 foreach (CategoryData data in m_MixerMatching.Categories)
                 {
                     if (m_CategoryVolumes.TryGetValue(data.Name, out float volume))
-                        m_Logger.Error($"Category '{data.Name}' already exists with Volume '{volume}'.");
+                        m_Logger.Error("Category {category} already exists with Volume {volume}.", data.Name);
                     else
                         m_CategoryVolumes.Add(data.Name, data.Volume);
                 }
@@ -60,7 +58,7 @@ namespace MixerMemory
                 foreach (ApplicationData data in m_MixerMatching.Rules)
                 {
                     if (!m_CategoryVolumes.TryGetValue(data.Category, out float volume))
-                        m_Logger.Error($"Rules using Category '{data.Category}' that is undefined in the \"Categories\" section.");
+                        m_Logger.Error("Rules using Category {category} that is undefined in the \"Categories\" section.", data.Category);
                 }
             }
         }
@@ -68,7 +66,7 @@ namespace MixerMemory
         public void RefreshDevice()
         {
             m_Device = m_Enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-            m_Logger.Info($"Set active device to {m_Device.DeviceFriendlyName}.");
+            m_Logger.Info("Set active device to {deviceName}.", m_Device.DeviceFriendlyName);
             m_Manager = m_Device.AudioSessionManager;
             m_Manager.OnSessionCreated += (s, a) => NewSession(new AudioSessionControl(a));
         }
@@ -84,20 +82,11 @@ namespace MixerMemory
         private async void NewSession(AudioSessionControl session)
         {
             string displayName = session.GetFriendlyDisplayName();
-            m_Logger.Info($"New Session '{displayName}'.");
-            RestoreSession(session);
+            m_Logger.Info("New Session {displayName}.", displayName);
 
-            // Zoom is odd in that we need to delay Restoring
-            // TODO: might want to try delaying all restoring
-            if (!m_Queued && displayName == "Zoom")
-            {
-                m_Queued = true;
-                m_Logger.Info($"Delay Restore Queued.");
-                await Task.Delay(TimeSpan.FromSeconds(5));
-                RestoreVolumes();
-                m_Logger.Info($"Delay Restore Fired.");
-                m_Queued = false;
-            }
+            // Some apps change their own volume shortly after loading, delay slightly to handle this case
+            await Task.Delay(TimeSpan.FromSeconds(1));
+            RestoreSession(session);
         }
 
         private void RestoreSession(AudioSessionControl session)
@@ -115,35 +104,49 @@ namespace MixerMemory
             }
 
             float volume = string.IsNullOrEmpty(category) ? 0.5f : m_CategoryVolumes[category];
-            m_Logger.Info($"Matched '{displayName}' at '{applicationPath}' to '{category}' volume '{volume}'.");
+            m_Logger.Info("Matched Session {displayName} from {applicationPath} to {category} volume {volume}.", displayName, applicationPath, category, volume);
             session.SimpleAudioVolume.Volume = volume;
         }
 
         public void OnDeviceStateChanged(string deviceId, DeviceState newState)
         {
-            if (m_Device.ID == deviceId)
+            try
             {
-                m_Logger.Info($"Device '{deviceId}' state changed to '{newState}'.");
-                RefreshDevice();
+                if (m_Device.ID != deviceId)
+                    return;
             }
+            catch (Exception e)
+            {
+                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(OnDeviceStateChanged), e.Message);
+            }
+
+            m_Logger.Info("Device {deviceId} state changed to {newState}.", deviceId, newState);
+            RefreshDevice();
         }
 
         public void OnDeviceAdded(string pwstrDeviceId) { }
 
         public void OnDeviceRemoved(string deviceId)
         {
-            if (m_Device.ID == deviceId)
+            try
             {
-                m_Logger.Info($"Device '{deviceId}' removed.");
-                RefreshDevice();
+                if (m_Device.ID != deviceId)
+                    return;
             }
+            catch (Exception e) 
+            {
+                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(OnDeviceRemoved), e.Message);
+            }
+
+            m_Logger.Info("Device {deviceId} removed.", deviceId);
+            RefreshDevice();
         }
 
         public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
         {
             if (flow == DataFlow.Render && role == Role.Multimedia)
             {
-                m_Logger.Info($"Default device changed to '{defaultDeviceId}'.");
+                m_Logger.Info("Default device changed to {deviceId}.", defaultDeviceId);
                 RefreshDevice();
             }
         }
