@@ -14,11 +14,12 @@ namespace MixerMemory
         public const string k_ConfigJson = "MixerMemory.json";
 
         private MMDeviceEnumerator m_Enumerator;
-        private MMDevice m_Device;
+
+        private string m_DeviceId;
         private AudioSessionManager m_Manager;
 
-        private Dictionary<string, float> m_CategoryVolumes = new Dictionary<string, float>();
         private MixerMatching m_MixerMatching = new MixerMatching();
+        private Dictionary<string, float> m_CategoryVolumes = new Dictionary<string, float>();
 
         private readonly Logger m_Logger = LogManager.GetCurrentClassLogger();
 
@@ -43,32 +44,57 @@ namespace MixerMemory
             m_CategoryVolumes.Clear();
             if (File.Exists(k_ConfigJson))
             {
-                m_Logger.Info("Loading values from config.");
+                m_Logger.Info("Loading values from {configFile}.", k_ConfigJson);
                 string text = File.ReadAllText(k_ConfigJson);
                 m_MixerMatching = JsonConvert.DeserializeObject<MixerMatching>(text);
+            }
+            else
+            {
+                m_Logger.Info("{configFile} not found. Loading default values.", k_ConfigJson);
+                m_MixerMatching.Categories = new[] { new CategoryData { Name = "System", Volume = 0.5f } };
+                m_MixerMatching.Rules = new[] { new ApplicationData { Type = MatchType.Always, Match = "", Category = "System" } };
+            }
 
-                foreach (CategoryData data in m_MixerMatching.Categories)
-                {
-                    if (m_CategoryVolumes.TryGetValue(data.Name, out float volume))
-                        m_Logger.Error("Category {category} already exists with Volume {volume}.", data.Name);
-                    else
-                        m_CategoryVolumes.Add(data.Name, data.Volume);
-                }
+            foreach (CategoryData data in m_MixerMatching.Categories)
+            {
+                if (m_CategoryVolumes.TryGetValue(data.Name, out float volume))
+                    m_Logger.Error("Category {category} already exists with Volume {volume}.", data.Name);
+                else
+                    m_CategoryVolumes.Add(data.Name, data.Volume);
+            }
 
-                foreach (ApplicationData data in m_MixerMatching.Rules)
-                {
-                    if (!m_CategoryVolumes.TryGetValue(data.Category, out float volume))
-                        m_Logger.Error("Rules using Category {category} that is undefined in the \"Categories\" section.", data.Category);
-                }
+            foreach (ApplicationData data in m_MixerMatching.Rules)
+            {
+                if (!m_CategoryVolumes.TryGetValue(data.Category, out float volume))
+                    m_Logger.Error("Rules using Category {category} that is undefined in the \"Categories\" section.", data.Category);
             }
         }
 
-        public void RefreshDevice()
+        public async void RefreshDevice()
         {
-            m_Device = m_Enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-            m_Logger.Info("Set active device to {deviceName}.", m_Device.DeviceFriendlyName);
-            m_Manager = m_Device.AudioSessionManager;
-            m_Manager.OnSessionCreated += (s, a) => NewSession(new AudioSessionControl(a));
+            try
+            {
+                using (MMDevice device = m_Enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia))
+                {
+                    if (m_DeviceId == device.ID)
+                        return;
+
+                    m_DeviceId = device.ID;
+                    m_Logger.Info("Set active device to {deviceName}.", device.DeviceFriendlyName);
+                    m_Manager = device.AudioSessionManager;
+                    m_Manager.OnSessionCreated += (s, a) =>
+                    {
+                        using (AudioSessionControl session = new AudioSessionControl(a))
+                            NewSession(session);
+                    };
+                }
+            }
+            catch (Exception e)
+            {
+                m_Logger.Debug("{functionName} Handled Exception: {message}. Retrying in 5 seconds.", nameof(RefreshDevice), e.Message);
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                RefreshDevice();
+            }
         }
 
         public void RestoreVolumes()
@@ -94,6 +120,7 @@ namespace MixerMemory
             string category = "";
             string displayName = session.GetFriendlyDisplayName();
             string applicationPath = session.GetApplicationPath();
+
             foreach (ApplicationData rule in m_MixerMatching.Rules)
             {
                 if (MixerMatching.Matchers[(int)rule.Type](displayName, applicationPath, rule.Match))
@@ -113,16 +140,8 @@ namespace MixerMemory
 
         public void OnDeviceStateChanged(string deviceId, DeviceState newState)
         {
-            try
-            {
-                if (m_Device.ID != deviceId)
-                    return;
-            }
-            catch (Exception e)
-            {
-                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(OnDeviceStateChanged), e.Message);
-            }
-
+            if (m_DeviceId != deviceId)
+                return;
             m_Logger.Info("Device {deviceId} state changed to {newState}.", deviceId, newState);
             RefreshDevice();
         }
@@ -131,16 +150,8 @@ namespace MixerMemory
 
         public void OnDeviceRemoved(string deviceId)
         {
-            try
-            {
-                if (m_Device.ID != deviceId)
-                    return;
-            }
-            catch (Exception e) 
-            {
-                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(OnDeviceRemoved), e.Message);
-            }
-
+            if (m_DeviceId != deviceId)
+                return;
             m_Logger.Info("Device {deviceId} removed.", deviceId);
             RefreshDevice();
         }

@@ -1,10 +1,11 @@
-﻿using System.Windows.Forms;
-using System.ComponentModel;
-using System.Drawing;
+﻿using NLog;
 using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Reflection;
-using System.Diagnostics;
+using System.Windows.Forms;
 
 namespace MixerMemory
 {
@@ -15,6 +16,8 @@ namespace MixerMemory
         private NotifyIcon m_NotifyIcon;
         private Timer m_Timer;
 
+        private readonly Logger m_Logger = LogManager.GetCurrentClassLogger();
+
         public MixerContext()
         {
             m_MixerMemory = new MixerMemory();
@@ -24,9 +27,9 @@ namespace MixerMemory
             var contextMenu = new ContextMenuStrip();
             contextMenu.Items.Add("Open Log", null, OpenLog);
             contextMenu.Items.Add("Open Config", null, OpenConfig);
-            contextMenu.Items.Add("Restore Volumes", null, (s, e) => m_MixerMemory.RestoreVolumes());
-            contextMenu.Items.Add("Reload Volumes", null, (s, e) => m_MixerMemory.LoadVolumes());
-            contextMenu.Items.Add("Refresh Device", null, (s, e) => m_MixerMemory.RefreshDevice());
+            contextMenu.Items.Add("Reload Volumes", null, ReloadVolumes);
+            contextMenu.Items.Add("Restore Volumes", null, RestoreVolumes);
+            contextMenu.Items.Add("Refresh Device", null, RefreshDevice);
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("Exit", null, Exit);
 
@@ -46,6 +49,7 @@ namespace MixerMemory
 
         private void OpenLog(object sender, EventArgs e)
         {
+            m_Logger.Info("{functionName} requested.", nameof(OpenLog));
             var appPath = Assembly.GetExecutingAssembly().Location;
             var dir = Path.GetDirectoryName(appPath);
             Process.Start(Path.Combine(dir, "info.log"));
@@ -53,9 +57,35 @@ namespace MixerMemory
 
         private void OpenConfig(object sender, EventArgs e)
         {
+            m_Logger.Info("{functionName} requested.", nameof(OpenConfig));
             var appPath = Assembly.GetExecutingAssembly().Location;
             var dir = Path.GetDirectoryName(appPath);
             Process.Start(Path.Combine(dir, MixerMemory.k_ConfigJson));
+        }
+
+        private void ReloadVolumes(object sender, EventArgs e)
+        {
+            m_Logger.Info("{functionName} requested.", nameof(ReloadVolumes));
+            m_MixerMemory.LoadVolumes();
+        }
+
+        private void RestoreVolumes(object sender, EventArgs e)
+        {
+            m_Logger.Info("{functionName} requested.", nameof(RestoreVolumes));
+            m_MixerMemory.RestoreVolumes();
+        }
+
+        private void RefreshDevice(object sender, EventArgs e)
+        {
+            m_Logger.Info("{functionName} requested.", nameof(RefreshDevice));
+            m_MixerMemory.RefreshDevice();
+        }
+
+        private void Exit(object sender, EventArgs e)
+        {
+            m_Logger.Info("{functionName} requested.", nameof(Exit));
+            m_NotifyIcon.Visible = false;
+            ExitThread();
         }
 
         protected override void Dispose(bool disposing)
@@ -65,12 +95,7 @@ namespace MixerMemory
                 m_Components.Dispose();
                 m_Components = null;
             }
-        }
-
-        private void Exit(object sender, EventArgs e)
-        {
-            m_NotifyIcon.Visible = false;
-            ExitThread();
+            base.Dispose(disposing);
         }
     }
 }
