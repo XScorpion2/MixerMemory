@@ -5,6 +5,7 @@ using NLog;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace MixerMemory
@@ -16,6 +17,7 @@ namespace MixerMemory
         private MMDeviceEnumerator m_Enumerator;
 
         private string m_DeviceId;
+        private bool m_IgnoreDevice = false;
         private AudioSessionManager m_Manager;
 
         private MixerMatching m_MixerMatching = new MixerMatching();
@@ -36,7 +38,6 @@ namespace MixerMemory
             m_Enumerator = new MMDeviceEnumerator();
             m_Enumerator.RegisterEndpointNotificationCallback(this);
             RefreshDevice();
-            RestoreVolumes();
         }
 
         public void LoadVolumes()
@@ -58,14 +59,17 @@ namespace MixerMemory
             foreach (CategoryData data in m_MixerMatching.Categories)
             {
                 if (m_CategoryVolumes.TryGetValue(data.Name, out float volume))
-                    m_Logger.Error("Category {category} already exists with Volume {volume}.", data.Name);
+                    m_Logger.Error("Category {category} already exists with Volume {volume}.", data.Name, volume);
                 else
                     m_CategoryVolumes.Add(data.Name, data.Volume);
             }
 
             foreach (ApplicationData data in m_MixerMatching.Rules)
             {
-                if (!m_CategoryVolumes.TryGetValue(data.Category, out float volume))
+                if (data.Category == "Ignore")
+                    continue;
+
+                if (!m_CategoryVolumes.ContainsKey(data.Category))
                     m_Logger.Error("Rules using Category {category} that is undefined in the \"Categories\" section.", data.Category);
             }
         }
@@ -76,11 +80,23 @@ namespace MixerMemory
             {
                 using (MMDevice device = m_Enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia))
                 {
-                    if (m_DeviceId == device.ID)
-                        return;
+                    if (m_DeviceId != device.ID)
+                        m_Logger.Info("Set active device to {deviceName}.", device.DeviceFriendlyName);
+
+                    string category = "";
+                    foreach (ApplicationData rule in m_MixerMatching.Rules)
+                    {
+                        if (MixerMatching.Matchers[(int)rule.Type](device.DeviceFriendlyName, device.InstanceId, rule.Match))
+                        {
+                            category = rule.Category;
+                            break;
+                        }
+                    }
+                    m_IgnoreDevice = category == "Ignore";
+                    if (m_IgnoreDevice && m_DeviceId != device.ID)
+                        m_Logger.Info("Active device {deviceName} is in the ignore category. Will not change session volumes.", device.DeviceFriendlyName);
 
                     m_DeviceId = device.ID;
-                    m_Logger.Info("Set active device to {deviceName}.", device.DeviceFriendlyName);
                     m_Manager = device.AudioSessionManager;
                     m_Manager.OnSessionCreated += (s, a) =>
                     {
@@ -93,33 +109,63 @@ namespace MixerMemory
             {
                 m_Logger.Debug("{functionName} Handled Exception: {message}. Retrying in 5 seconds.", nameof(RefreshDevice), e.Message);
                 await Task.Delay(TimeSpan.FromSeconds(5));
-                RefreshDevice();
+            }
+            RestoreVolumes();
+        }
+
+        public void SetCatagoryVolume(string category, float newVolume)
+        {
+            if (newVolume < 0f)
+            {
+                newVolume = 0f;
+                m_Logger.Error("Volume {volume} is out of the expected [0.00, 1.00] range.", newVolume);
+            }
+            else if (newVolume > 1f)
+            {
+                newVolume = 1f;
+                m_Logger.Error("Volume {volume} is out of the expected [0.00, 1.00] range.", newVolume);
+            }
+
+            if (!m_CategoryVolumes.TryGetValue(category, out float currentVolume))
+            {
+                m_Logger.Error("Cannot update Volume for undefined Category {category}.", category);
+                return;
+            }
+
+            if (currentVolume != newVolume)
+            {
+                m_Logger.Info("Updating Category {category} to new Volume {volume}.", category, newVolume);
+                m_CategoryVolumes[category] = newVolume;
+                RestoreVolumes(true);
             }
         }
 
-        public void RestoreVolumes()
+        public void RestoreVolumes(bool fastUpdate = false)
         {
-            m_Manager.RefreshSessions();
+            if (m_IgnoreDevice) return;
+            if (!fastUpdate)
+            {
+                m_Manager.RefreshSessions();
+                Extensions.PruneNameAndPathCache();
+            }
             SessionCollection sessions = m_Manager.Sessions;
             for (int i = 0; i < sessions.Count; i++)
-                RestoreSession(sessions[i]);
+                RestoreSession(sessions[i], fastUpdate);
         }
 
-        private async void NewSession(AudioSessionControl session)
+        private void NewSession(AudioSessionControl session)
         {
-            string displayName = session.GetFriendlyDisplayName();
+            if (!session.GetFriendlyDisplayNameAndApplicationPath(out string displayName, out _))
+                m_Logger.Error("{functionName} Failed to get 'displayName'.", nameof(NewSession));
             m_Logger.Info("New Session {displayName}.", displayName);
-
-            // Some apps change their own volume shortly after loading, delay slightly to handle this case
-            await Task.Delay(TimeSpan.FromSeconds(1));
             RestoreSession(session);
         }
 
-        private void RestoreSession(AudioSessionControl session)
+        private void RestoreSession(AudioSessionControl session, bool fastUpdate = false)
         {
             string category = "";
-            string displayName = session.GetFriendlyDisplayName();
-            string applicationPath = session.GetApplicationPath();
+            if (!session.GetFriendlyDisplayNameAndApplicationPath(out string displayName, out string applicationPath))
+                m_Logger.Error("{functionName} Failed to get 'displayName' and 'applicationPath'.", nameof(RestoreSession));
 
             foreach (ApplicationData rule in m_MixerMatching.Rules)
             {
@@ -130,11 +176,15 @@ namespace MixerMemory
                 }
             }
 
+            if (category == "Ignore")
+                return;
+
             float volume = string.IsNullOrEmpty(category) ? 0.5f : m_CategoryVolumes[category];
             if (session.SimpleAudioVolume.Volume == volume)
                 return;
 
-            m_Logger.Info("Matched Session {displayName} from {applicationPath} to {category} volume {volume}.", displayName, applicationPath, category, volume);
+            if (!fastUpdate)
+                m_Logger.Info("Matched Session {displayName} from {applicationPath} to {category} volume {volume}.", displayName, applicationPath, category, volume);
             session.SimpleAudioVolume.Volume = volume;
         }
 

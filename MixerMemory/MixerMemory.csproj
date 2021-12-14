@@ -84,6 +84,7 @@
     <Compile Include="Extensions.cs" />
     <Compile Include="MatchTypeConverter.cs" />
     <Compile Include="MixerContext.cs" />
+    <Compile Include="MixerDevice.cs" />
     <Compile Include="MixerMatching.cs" />
     <Compile Include="MixerMemory.cs" />
     <Compile Include="Program.cs" />

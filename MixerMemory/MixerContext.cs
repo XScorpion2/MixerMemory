@@ -12,6 +12,7 @@ namespace MixerMemory
     public class MixerContext : ApplicationContext
     {
         private MixerMemory m_MixerMemory;
+        private MixerDevice m_MixerDevice;
         private IContainer m_Components;
         private NotifyIcon m_NotifyIcon;
         private Timer m_Timer;
@@ -21,13 +22,14 @@ namespace MixerMemory
         public MixerContext()
         {
             m_MixerMemory = new MixerMemory();
+            m_MixerDevice = new MixerDevice(m_MixerMemory.SetCatagoryVolume);
 
             m_Components = new Container();
 
             var contextMenu = new ContextMenuStrip();
             contextMenu.Items.Add("Open Log", null, OpenLog);
             contextMenu.Items.Add("Open Config", null, OpenConfig);
-            contextMenu.Items.Add("Reload Volumes", null, ReloadVolumes);
+            contextMenu.Items.Add("Reload Config", null, ReloadConfig);
             contextMenu.Items.Add("Restore Volumes", null, RestoreVolumes);
             contextMenu.Items.Add("Refresh Device", null, RefreshDevice);
             contextMenu.Items.Add(new ToolStripSeparator());
@@ -63,9 +65,9 @@ namespace MixerMemory
             Process.Start(Path.Combine(dir, MixerMemory.k_ConfigJson));
         }
 
-        private void ReloadVolumes(object sender, EventArgs e)
+        private void ReloadConfig(object sender, EventArgs e)
         {
-            m_Logger.Info("{functionName} requested.", nameof(ReloadVolumes));
+            m_Logger.Info("{functionName} requested.", nameof(ReloadConfig));
             m_MixerMemory.LoadVolumes();
         }
 
@@ -84,6 +86,7 @@ namespace MixerMemory
         private void Exit(object sender, EventArgs e)
         {
             m_Logger.Info("{functionName} requested.", nameof(Exit));
+            m_MixerDevice.Dispose();
             m_NotifyIcon.Visible = false;
             ExitThread();
         }

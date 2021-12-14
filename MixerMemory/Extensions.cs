@@ -1,9 +1,12 @@
 ﻿using NAudio.CoreAudioApi;
 using NLog;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Linq;
 
 namespace MixerMemory
 {
@@ -45,60 +48,70 @@ namespace MixerMemory
             return "";
         }
 
-        public static string GetFriendlyDisplayName(this AudioSessionControl session)
+        // Basic LRU cache as dealing with process is slow
+        static Dictionary<string, (string, string, DateTime)> m_NameAndPathCache = new Dictionary<string, (string, string, DateTime)>();
+
+        public static void PruneNameAndPathCache()
         {
-            if (session.IsSystemSoundsSession)
-                return "System Sound";
-
-            if (!string.IsNullOrEmpty(session.DisplayName))
-                return session.DisplayName;
-
-            try
-            {
-                var process = Process.GetProcessById((int)session.GetProcessID);
-                var displayName = process.GetProductName();
-                if (!string.IsNullOrEmpty(displayName))
-                    return displayName;
-                displayName = process.MainWindowTitle;
-                if (!string.IsNullOrEmpty(displayName))
-                    return displayName;
-                displayName = process.ProcessName;
-                if (!string.IsNullOrEmpty(displayName))
-                    return displayName;
-                displayName = process.GetMainModuleFileName();
-                if (!string.IsNullOrEmpty(displayName))
-                    return displayName;
-            }
-            catch (Exception e)
-            {
-                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(GetFriendlyDisplayName), e.Message);
-            }
-            // ExtractAppPath from SessionIdentifier
-            return "Unnamed";
+            TimeSpan ejectionTime = new TimeSpan(0, 5, 0);
+            var keys = m_NameAndPathCache.Where(x => x.Value.Item3 - DateTime.Now > ejectionTime).Select(x => x.Key);
+            foreach (var key in keys)
+                m_NameAndPathCache.Remove(key);
         }
 
-        public static string GetApplicationPath(this AudioSessionControl session)
+        public static bool GetFriendlyDisplayNameAndApplicationPath(this AudioSessionControl session, out string displayName, out string applicationPath)
         {
             if (session.IsSystemSoundsSession)
-                return "System Sound";
+            {
+                displayName = "System Sound";
+                applicationPath = "System Sound";
+                return true;
+            }
 
+            if (m_NameAndPathCache.TryGetValue(session.GetSessionIdentifier, out var results))
+            {
+                displayName = results.Item1;
+                applicationPath = results.Item2;
+                results.Item3 = DateTime.Now;
+                m_NameAndPathCache[session.GetSessionIdentifier] = results;
+                return true;
+            }
+
+            displayName = session.DisplayName;
+            applicationPath = session.IconPath;
+            bool result = true;
             try
             {
                 var process = Process.GetProcessById((int)session.GetProcessID);
-                string path = process.GetMainModuleFileName();
-                if (!string.IsNullOrEmpty(path))
-                    return path;
+
+                applicationPath = process.GetMainModuleFileName();
                 // process.MainModule.FileName is identical to the GetMainModuleFileName extension method
                 // but the extension method was witten to be more flexible and not throw an exception.
                 // so if the extension method returns null, then we don't have access, simple as that.
                 // There are no fallbacks worth exploring here.
+
+                displayName = process.GetProductName();
+                if (string.IsNullOrEmpty(displayName))
+                    displayName = process.MainWindowTitle;
+                if (string.IsNullOrEmpty(displayName))
+                    displayName = process.ProcessName;
+                if (string.IsNullOrEmpty(displayName))
+                    displayName = Path.GetFileNameWithoutExtension(applicationPath);
             }
             catch (Exception e)
             {
-                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(GetApplicationPath), e.Message);
+                m_Logger.Debug("{functionName} Handled Exception: {message}.", nameof(GetFriendlyDisplayNameAndApplicationPath), e.Message);
+                result = false;
             }
-            // ExtractAppPath from SessionIdentifier
-            return "Unavailable";
+
+            if (string.IsNullOrEmpty(displayName))
+                displayName = "Unnamed";
+
+            if (string.IsNullOrEmpty(applicationPath))
+                applicationPath = "Unavailable";
+
+            m_NameAndPathCache[session.GetSessionIdentifier] = (displayName, applicationPath, DateTime.Now);
+            return result;
         }
     }
 }

@@ -37,5 +37,6 @@ namespace MixerMemory
 
         public CategoryData[] Categories { get; set; }
         public ApplicationData[] Rules { get; set; }
+        public ApplicationData[] Devices { get; set; }
     }
 }
