@@ -22,7 +22,6 @@ namespace MixerMemory
         public MixerContext()
         {
             m_MixerMemory = new MixerMemory();
-            m_MixerDevice = new MixerDevice(m_MixerMemory.SetCatagoryVolume);
 
             m_Components = new Container();
 
@@ -47,6 +46,8 @@ namespace MixerMemory
             m_Timer.Tick += (s, e) => m_MixerMemory.RestoreVolumes();
             m_Timer.Interval = 300000;
             m_Timer.Start();
+
+            m_MixerDevice = new MixerDevice(m_MixerMemory.SetCatagoryVolume);
         }
 
         private void OpenLog(object sender, EventArgs e)
@@ -86,17 +87,24 @@ namespace MixerMemory
         private void Exit(object sender, EventArgs e)
         {
             m_Logger.Info("{functionName} requested.", nameof(Exit));
-            m_MixerDevice.Dispose();
             m_NotifyIcon.Visible = false;
             ExitThread();
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && m_Components != null)
+            if (disposing)
             {
-                m_Components.Dispose();
-                m_Components = null;
+                if (m_MixerDevice != null)
+                {
+                    m_MixerDevice.Dispose();
+                    m_MixerDevice = null;
+                }
+                if (m_Components != null)
+                {
+                    m_Components.Dispose();
+                    m_Components = null;
+                }
             }
             base.Dispose(disposing);
         }

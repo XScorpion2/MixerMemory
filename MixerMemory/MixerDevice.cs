@@ -31,6 +31,7 @@ namespace MixerMemory
                 m_SerialPort.DiscardInBuffer();
                 m_SerialPort.DiscardOutBuffer();
                 m_SerialPort.DataReceived += OnDataReceived;
+                m_SerialPort.WriteLine("T");
             }
             catch (Exception e)
             {
@@ -83,7 +84,7 @@ namespace MixerMemory
                     if (command >= 0 && command <= 4)
                     {
                         float value = float.Parse(data.Substring(2)) / 100f;
-                        Console.WriteLine($"Data Received: {command}:{value}");
+                        Console.WriteLine($"Data Received: {command}:{value * 100f}");
 
                         Interlocked.Exchange(ref m_Updates[command], value);
                     }
